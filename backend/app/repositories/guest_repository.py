@@ -1,0 +1,1 @@
+"""Guest session persistence boundary."""

@@ -1,0 +1,1 @@
+"""Ownership-filtered vector retrieval."""

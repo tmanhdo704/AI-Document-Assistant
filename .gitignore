@@ -1,1 +1,43 @@
+# Local environment and secret configuration
+.env
+.env.*
+!.env.example
+!.env.sample
 
+# Private credentials and keys
+secrets/
+credentials/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Internal guidance documents
+AI_Document_Assistant_4_Week_Plan_Standard_Structure.md
+AI_Mentor_Guidelines.md
+AI_Mentor_Prompts.pdf
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# Frontend
+node_modules/
+dist/
+coverage/
+
+# Runtime data
+storage/*
+!storage/.gitkeep
+tmp/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

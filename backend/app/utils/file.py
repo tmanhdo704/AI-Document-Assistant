@@ -1,0 +1,1 @@
+"""Stateless file-validation helpers."""
