@@ -22,6 +22,11 @@ services:
       ENVIRONMENT: development
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-ai_document_assistant}
       CORS_ORIGINS: http://localhost:5173
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
     ports:
       - "8000:8000"
     volumes:
@@ -35,6 +40,7 @@ services:
       context: ./frontend
     environment:
       VITE_API_URL: http://localhost:8000/api/v1
+      VITE_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       CHOKIDAR_USEPOLLING: "true"
     ports:
       - "5173:5173"
