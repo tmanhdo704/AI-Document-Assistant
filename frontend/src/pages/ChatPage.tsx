@@ -1,6 +1,13 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 
+import {
+  clearAccessToken,
+  getCurrentUser,
+  logout as logoutSession,
+  type User,
+} from "../services/api-client";
+
 type Message = {
   id: number;
   role: "user" | "assistant";
@@ -47,12 +54,36 @@ export default function ChatPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     document.documentElement.dataset.theme = darkMode ? "dark" : "light";
     localStorage.setItem("docalley-theme", darkMode ? "dark" : "light");
   }, [darkMode]);
+
+  useEffect(() => {
+    getCurrentUser()
+      .then(setUser)
+      .catch(() => {
+        clearAccessToken();
+        setUser(null);
+      })
+      .finally(() => {
+        setAuthLoading(false);
+      });
+  }, []);
+
+  async function logout() {
+    try {
+      await logoutSession();
+    } catch {
+      // Access token vẫn được xóa trong api-client.
+    } finally {
+      setUser(null);
+    }
+  }
 
   function startNewChat() {
     setMessages([]);
@@ -207,23 +238,67 @@ export default function ChatPage() {
             </button>
           </div>
 
-          <button
-            className={`mt-1 flex w-full items-center gap-2.5 rounded-[10px] bg-transparent px-2 py-2 text-left hover:bg-neutral-200 dark:hover:bg-neutral-800 ${focusRing}`}
-            type="button"
-          >
-            <span className="grid size-8 place-items-center rounded-full bg-violet-500 text-xs font-bold text-white">
-              K
-            </span>
-            <span className="flex min-w-0 flex-1 flex-col">
-              <strong className="text-[0.81rem] font-semibold">Khách</strong>
-              <small className="mt-0.5 truncate text-[0.68rem] text-neutral-500 dark:text-neutral-400">
-                Đăng nhập để lưu lịch sử
-              </small>
-            </span>
-            <span className="text-neutral-500" aria-hidden="true">
-              ···
-            </span>
-          </button>
+          {authLoading ? (
+            <div className="mt-1 flex w-full items-center gap-2.5 rounded-xl border border-neutral-200 px-3 py-2.5 dark:border-neutral-800">
+              <span className="grid size-8 place-items-center rounded-full bg-violet-500 text-xs font-bold text-white">
+                …
+              </span>
+              <span className="flex min-w-0 flex-1 flex-col">
+                <strong className="text-[0.81rem] font-semibold">
+                  Đang tải...
+                </strong>
+                <small className="mt-0.5 text-[0.68rem] text-neutral-500 dark:text-neutral-400">
+                  Đang kiểm tra phiên đăng nhập
+                </small>
+              </span>
+            </div>
+          ) : user ? (
+            <div className="mt-1 flex w-full items-center gap-2.5 rounded-xl border border-neutral-200 px-3 py-2.5 dark:border-neutral-800">
+              <span className="grid size-8 shrink-0 place-items-center rounded-full bg-violet-500 text-xs font-bold text-white">
+                {user.full_name?.charAt(0).toUpperCase() ||
+                  user.email.charAt(0).toUpperCase()}
+              </span>
+              <span className="flex min-w-0 flex-1 flex-col">
+                <strong className="truncate text-[0.81rem] font-semibold">
+                  {user.full_name || user.email}
+                </strong>
+                <small className="mt-0.5 truncate text-[0.68rem] text-neutral-500 dark:text-neutral-400">
+                  {user.email}
+                </small>
+              </span>
+              <button
+                className={`rounded-md px-2 py-1 text-[0.68rem] font-semibold text-neutral-500 transition hover:bg-neutral-200 hover:text-neutral-800 dark:hover:bg-neutral-800 dark:hover:text-neutral-200 ${focusRing}`}
+                type="button"
+                onClick={logout}
+              >
+                Thoát
+              </button>
+            </div>
+          ) : (
+            <Link
+              to="/login"
+              aria-label="Đăng nhập vào DocAlly"
+              className={`group mt-1 flex w-full items-center gap-2.5 rounded-xl border border-neutral-200 px-3 py-2.5 transition duration-200 hover:-translate-y-0.5 hover:border-violet-400 hover:bg-violet-50 hover:shadow-md dark:border-neutral-800 dark:hover:border-violet-600 dark:hover:bg-violet-950/30 ${focusRing}`}
+            >
+              <span className="grid size-8 shrink-0 place-items-center rounded-full bg-violet-500 text-xs font-bold text-white transition group-hover:scale-105 group-hover:bg-violet-600">
+                K
+              </span>
+              <span className="flex min-w-0 flex-1 flex-col">
+                <strong className="text-[0.81rem] font-semibold transition group-hover:text-violet-700 dark:group-hover:text-violet-300">
+                  Khách
+                </strong>
+                <small className="mt-0.5 truncate text-[0.68rem] text-neutral-500 transition group-hover:text-violet-600 dark:text-neutral-400 dark:group-hover:text-violet-400">
+                  Đăng nhập để lưu lịch sử
+                </small>
+              </span>
+              <span
+                className="text-neutral-400 transition group-hover:translate-x-0.5 group-hover:text-violet-500"
+                aria-hidden="true"
+              >
+                →
+              </span>
+            </Link>
+          )}
         </div>
       </aside>
 
@@ -235,12 +310,32 @@ export default function ChatPage() {
           >
             DocAlly <span className="ml-1 text-neutral-500">⌄</span>
           </button>
-          <Link
-            to="/login"
-            className={`rounded-full bg-neutral-900 px-4 py-2 text-[0.82rem] font-semibold text-white transition hover:opacity-80 dark:bg-white dark:text-neutral-900 ${focusRing}`}
-          >
-            Đăng nhập
-          </Link>
+          {authLoading ? (
+            <span className="text-[0.8rem] text-neutral-500 dark:text-neutral-400">
+              Đang kiểm tra...
+            </span>
+          ) : user ? (
+            <div className="flex items-center gap-2">
+              <span className="hidden max-w-48 truncate text-[0.8rem] text-neutral-500 sm:block dark:text-neutral-400">
+                {user.full_name || user.email}
+              </span>
+
+              <button
+                type="button"
+                onClick={logout}
+                className={`rounded-full border border-neutral-300 px-4 py-2 text-[0.82rem] font-semibold transition hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800 ${focusRing}`}
+              >
+                Đăng xuất
+              </button>
+            </div>
+          ) : (
+            <Link
+              to="/login"
+              className={`rounded-full bg-neutral-900 px-4 py-2 text-[0.82rem] font-semibold text-white transition hover:opacity-80 dark:bg-white dark:text-neutral-900 ${focusRing}`}
+            >
+              Đăng nhập
+            </Link>
+          )}
         </header>
 
         <section
