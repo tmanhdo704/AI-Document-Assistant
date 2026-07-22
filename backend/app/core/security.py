@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 import secrets
 from datetime import UTC, datetime, timedelta
 
@@ -76,4 +77,43 @@ def generate_refresh_token() -> str:
 def hash_refresh_token(token: str) -> str:
     return hashlib.sha256(
         token.encode("utf-8"),
+    ).hexdigest()
+
+def generate_guest_token() -> str:
+    return secrets.token_urlsafe(48)
+
+
+def hash_guest_token(token: str) -> str:
+    return hashlib.sha256(
+        token.encode("utf-8"),
+    ).hexdigest()
+
+
+def create_guest_identity_hash(
+    *,
+    ip_address: str,
+    user_agent: str | None,
+    accept_language: str | None,
+) -> str:
+    settings = get_settings()
+
+    identity_key = hmac.new(
+        settings.jwt_secret_key.encode("utf-8"),
+        b"docally-guest-identity-key-v1",
+        hashlib.sha256,
+    ).digest()
+
+    normalized_identity = "\n".join(
+        [
+            "docally-guest-identity-v1",
+            ip_address.strip(),
+            (user_agent or "").strip().lower(),
+            (accept_language or "").strip().lower(),
+        ]
+    )
+
+    return hmac.new(
+        identity_key,
+        normalized_identity.encode("utf-8"),
+        hashlib.sha256,
     ).hexdigest()
