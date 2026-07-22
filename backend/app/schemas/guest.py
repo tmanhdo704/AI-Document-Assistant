@@ -1,1 +1,11 @@
-"""Guest session and usage schemas."""
+from pydantic import BaseModel, Field
+
+
+class GuestUsageResponse(BaseModel):
+    question_count: int = Field(ge=0)
+    question_limit: int = Field(ge=1)
+    questions_remaining: int = Field(ge=0)
+
+    document_count: int = Field(ge=0)
+    document_limit: int = Field(ge=1)
+    documents_remaining: int = Field(ge=0)
