@@ -8,6 +8,9 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    env:
+      JWT_SECRET_KEY: ci-test-secret-key
+      GOOGLE_CLIENT_ID: ci-test-google-client-id
     defaults:
       run:
         working-directory: backend
@@ -21,8 +24,8 @@ jobs:
             backend/requirements.txt
             backend/requirements-dev.txt
       - run: pip install -r requirements-dev.txt
-      - run: ruff check app tests
-      - run: pytest
+      - run: ruff check app tests alembic/versions
+      - run: python -m pytest
 
   frontend:
     runs-on: ubuntu-latest
