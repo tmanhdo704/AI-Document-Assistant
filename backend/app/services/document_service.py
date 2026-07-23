@@ -12,6 +12,7 @@ from app.repositories.document_repository import DocumentRepository
 from app.repositories.guest_repository import GuestRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.document import DocumentResponse
+from app.services.extraction_service import ExtractionService
 from app.utils.file import (
     delete_document_file,
     generate_document_storage_key,
@@ -48,6 +49,9 @@ class DocumentService:
             upload,
             max_size_bytes=self.settings.document_max_size_bytes,
         )
+        extracted_document = ExtractionService().extract_pdf(
+            validated_pdf.content,
+        )
         document_count, document_limit = self._lock_owner_and_count_documents(
             owner,
         )
@@ -81,6 +85,11 @@ class DocumentService:
                 content_type=validated_pdf.content_type,
                 size_bytes=validated_pdf.size_bytes,
                 file_hash=validated_pdf.file_hash,
+            )
+            self.repository.update_status(
+                document,
+                status="EXTRACTED",
+                page_count=extracted_document.page_count,
             )
 
             self.db.commit()

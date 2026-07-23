@@ -76,6 +76,21 @@ function getUploadErrorMessage(error: unknown): string {
     return "Vui lòng chọn một file PDF hợp lệ.";
   }
 
+  if (error.code === "ENCRYPTED_PDF") {
+    return "DocAlly chưa hỗ trợ PDF được bảo vệ bằng mật khẩu.";
+  }
+
+  if (error.code === "PDF_TEXT_NOT_FOUND") {
+    return "PDF không có văn bản đọc được. File scan cần OCR ở bước sau.";
+  }
+
+  if (
+    error.code === "EMPTY_PDF" ||
+    error.code === "PDF_EXTRACTION_FAILED"
+  ) {
+    return "Không thể đọc nội dung trong PDF này.";
+  }
+
   return error.message;
 }
 
@@ -600,6 +615,11 @@ export default function ChatPage() {
                   <span className="text-neutral-400">
                     {formatFileSize(document.size_bytes)}
                   </span>
+                  {document.page_count !== null && (
+                    <span className="text-neutral-400">
+                      {document.page_count} trang
+                    </span>
+                  )}
                 </span>
               ))}
               {documents.length > 4 && (

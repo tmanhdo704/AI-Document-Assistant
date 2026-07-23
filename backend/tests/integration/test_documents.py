@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
 
 from app.core.config import get_settings
+from tests.pdf_factory import create_test_pdf
 
 
 def start_guest_session(client: TestClient) -> None:
@@ -35,7 +36,7 @@ def test_guest_can_upload_and_list_pdf(
 ) -> None:
     use_temporary_upload_directory(monkeypatch, tmp_path)
     start_guest_session(client)
-    content = b"%PDF-1.7\nguest document"
+    content = create_test_pdf("guest document")
 
     upload_response = client.post(
         "/api/v1/documents",
@@ -53,7 +54,8 @@ def test_guest_can_upload_and_list_pdf(
     assert uploaded["original_filename"] == "guest-report.pdf"
     assert uploaded["content_type"] == "application/pdf"
     assert uploaded["size_bytes"] == len(content)
-    assert uploaded["status"] == "PENDING"
+    assert uploaded["status"] == "EXTRACTED"
+    assert uploaded["page_count"] == 1
     assert "storage_key" not in uploaded
     assert "file_hash" not in uploaded
 
@@ -90,7 +92,7 @@ def test_authenticated_user_can_upload_pdf(
         files={
             "file": (
                 "user-report.pdf",
-                b"%PDF-1.7\nuser document",
+                create_test_pdf("user document"),
                 "application/pdf",
             ),
         },
@@ -122,7 +124,7 @@ def test_upload_requires_user_or_guest_session(
         files={
             "file": (
                 "report.pdf",
-                b"%PDF-1.7\ncontent",
+                create_test_pdf("content"),
                 "application/pdf",
             ),
         },
@@ -176,7 +178,7 @@ def test_oversized_pdf_is_rejected(
         files={
             "file": (
                 "large.pdf",
-                b"%PDF-" + b"a" * 20,
+                create_test_pdf("large document"),
                 "application/pdf",
             ),
         },
@@ -201,7 +203,7 @@ def test_guest_document_limit_is_three(
             files={
                 "file": (
                     f"guest-{index}.pdf",
-                    f"%PDF-1.7\nguest {index}".encode(),
+                    create_test_pdf(f"guest {index}"),
                     "application/pdf",
                 ),
             },
@@ -213,7 +215,7 @@ def test_guest_document_limit_is_three(
         files={
             "file": (
                 "guest-4.pdf",
-                b"%PDF-1.7\nguest 4",
+                create_test_pdf("guest 4"),
                 "application/pdf",
             ),
         },
@@ -253,7 +255,7 @@ def test_user_document_limit_is_ten(
             files={
                 "file": (
                     f"user-{index}.pdf",
-                    f"%PDF-1.7\nuser {index}".encode(),
+                    create_test_pdf(f"user {index}"),
                     "application/pdf",
                 ),
             },
@@ -266,7 +268,7 @@ def test_user_document_limit_is_ten(
         files={
             "file": (
                 "user-11.pdf",
-                b"%PDF-1.7\nuser 11",
+                create_test_pdf("user 11"),
                 "application/pdf",
             ),
         },
