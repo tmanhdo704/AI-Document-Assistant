@@ -27,12 +27,16 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
-      GUEST_MAX_DOCUMENTS: ${GUEST_MAX_DOCUMENTS:-1}
       GUEST_MAX_QUESTIONS: ${GUEST_MAX_QUESTIONS:-3}
+      GUEST_MAX_DOCUMENTS: ${GUEST_MAX_DOCUMENTS:-3}
+      USER_MAX_DOCUMENTS: ${USER_MAX_DOCUMENTS:-10}
+      DOCUMENT_UPLOAD_DIRECTORY: /app/storage/uploads
+      DOCUMENT_MAX_SIZE_BYTES: ${DOCUMENT_MAX_SIZE_BYTES:-26214400}
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
+      - ./storage:/app/storage
     depends_on:
       postgres:
         condition: service_healthy

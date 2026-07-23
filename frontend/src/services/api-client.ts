@@ -49,7 +49,11 @@ async function send<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   const token = getAccessToken();
 
-  if (options.body && !headers.has("Content-Type")) {
+  if (
+    options.body &&
+    !(options.body instanceof FormData) &&
+    !headers.has("Content-Type")
+  ) {
     headers.set("Content-Type", "application/json");
   }
 
@@ -120,6 +124,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const canRefresh =
       error instanceof ApiError &&
       error.status === 401 &&
+      getAccessToken() !== null &&
       path !== "/auth/login" &&
       path !== "/auth/register" &&
       path !== "/auth/google" &&
@@ -141,8 +146,46 @@ export type HealthResponse = {
   service: string;
 };
 
+export type GuestUsage = {
+  question_count: number;
+  question_limit: number;
+  questions_remaining: number;
+};
+
+export type Document = {
+  id: string;
+  original_filename: string;
+  content_type: string;
+  size_bytes: number;
+  status: string;
+  page_count: number | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export async function getHealth(): Promise<HealthResponse> {
   return request<HealthResponse>("/health");
+}
+
+export async function createGuestSession(): Promise<GuestUsage> {
+  return request<GuestUsage>("/guest/session", {
+    method: "POST",
+  });
+}
+
+export async function uploadDocument(file: File): Promise<Document> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  return request<Document>("/documents", {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export async function listDocuments(): Promise<Document[]> {
+  return request<Document[]>("/documents");
 }
 
 export async function login(

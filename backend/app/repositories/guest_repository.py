@@ -1,3 +1,5 @@
+import uuid
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -23,6 +25,21 @@ class GuestRepository:
         self.db.flush()
 
         return guest_session
+
+    def get_by_id(
+        self,
+        guest_session_id: uuid.UUID,
+        *,
+        for_update: bool = False,
+    ) -> GuestSession | None:
+        statement = select(GuestSession).where(
+            GuestSession.id == guest_session_id,
+        )
+
+        if for_update:
+            statement = statement.with_for_update()
+
+        return self.db.scalar(statement)
 
     def get_by_token_hash(
         self,

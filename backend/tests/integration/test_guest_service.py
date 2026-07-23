@@ -50,8 +50,6 @@ def test_create_new_guest_session(
     )
     assert result.response.question_count == 0
     assert result.response.questions_remaining == 3
-    assert result.response.document_count == 0
-    assert result.response.documents_remaining == 1
 
 
 def test_valid_cookie_reuses_existing_session(
@@ -73,7 +71,6 @@ def test_valid_cookie_reuses_existing_session(
     assert guest_session is not None
 
     guest_session.question_count = 2
-    guest_session.document_count = 1
     db_session.commit()
 
     second_result = service.create_or_restore_session(
@@ -91,8 +88,6 @@ def test_valid_cookie_reuses_existing_session(
     assert second_result.guest_token == first_result.guest_token
     assert second_result.response.question_count == 2
     assert second_result.response.questions_remaining == 1
-    assert second_result.response.document_count == 1
-    assert second_result.response.documents_remaining == 0
 
 
 def test_deleted_cookie_restores_session_without_resetting_usage(
@@ -114,7 +109,6 @@ def test_deleted_cookie_restores_session_without_resetting_usage(
     assert guest_session is not None
 
     guest_session.question_count = 2
-    guest_session.document_count = 1
     db_session.commit()
 
     restored_result = service.create_or_restore_session(
@@ -132,8 +126,6 @@ def test_deleted_cookie_restores_session_without_resetting_usage(
     assert restored_result.guest_token != first_result.guest_token
     assert restored_result.response.question_count == 2
     assert restored_result.response.questions_remaining == 1
-    assert restored_result.response.document_count == 1
-    assert restored_result.response.documents_remaining == 0
 
     with pytest.raises(ApplicationError) as error_info:
         service.get_usage(first_result.guest_token)
@@ -182,41 +174,6 @@ def test_invalid_guest_token_is_rejected(
 
     assert error_info.value.code == "INVALID_GUEST_SESSION"
     assert error_info.value.status_code == 401
-    
-def test_guest_can_consume_only_one_document(
-    db_session: Session,
-) -> None:
-    service = GuestService(db_session)
-
-    result = service.create_or_restore_session(
-        guest_token=None,
-        ip_address="192.168.1.20",
-        user_agent="Chrome on Windows",
-        accept_language="vi-VN",
-    )
-
-    usage = service.consume_document(
-        result.guest_token,
-    )
-
-    assert usage.document_count == 1
-    assert usage.documents_remaining == 0
-
-    with pytest.raises(ApplicationError) as error_info:
-        service.consume_document(
-            result.guest_token,
-        )
-
-    assert (
-        error_info.value.code
-        == "GUEST_DOCUMENT_LIMIT_REACHED"
-    )
-    assert error_info.value.status_code == 403
-
-    current_usage = service.get_usage(
-        result.guest_token,
-    )
-    assert current_usage.document_count == 1
 
 
 def test_guest_can_consume_only_three_questions(

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Cookie, Depends, Request, Response
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db
+from app.api.deps import GUEST_COOKIE_NAME, get_db
 from app.core.config import get_settings
 from app.core.exceptions import ApplicationError
 from app.schemas.guest import GuestUsageResponse
@@ -12,7 +12,6 @@ router = APIRouter(
     tags=["guest"],
 )
 
-GUEST_COOKIE_NAME = "docally_guest_token"
 GUEST_COOKIE_PATH = "/api/v1"
 
 

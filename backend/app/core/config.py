@@ -17,17 +17,19 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
     google_client_id: str
-    
-    guest_max_documents: int = 1
+
     guest_max_questions: int = 3
+    guest_max_documents: int = 3
+    user_max_documents: int = 10
+
+    document_upload_directory: str = "storage/uploads"
+    document_max_size_bytes: int = 25 * 1024 * 1024
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin]
-    
-
 
 
 @lru_cache

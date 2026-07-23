@@ -10,8 +10,18 @@ class UserRepository:
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    def get_by_id(self, user_id: uuid.UUID) -> User | None:
-        return self.db.get(User, user_id)
+    def get_by_id(
+        self,
+        user_id: uuid.UUID,
+        *,
+        for_update: bool = False,
+    ) -> User | None:
+        statement = select(User).where(User.id == user_id)
+
+        if for_update:
+            statement = statement.with_for_update()
+
+        return self.db.scalar(statement)
 
     def get_by_email(self, email: str) -> User | None:
         statement = select(User).where(User.email == email)

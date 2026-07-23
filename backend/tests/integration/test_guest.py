@@ -22,9 +22,6 @@ def test_create_guest_session_sets_http_only_cookie(
         "question_count": 0,
         "question_limit": 3,
         "questions_remaining": 3,
-        "document_count": 0,
-        "document_limit": 1,
-        "documents_remaining": 1,
     }
 
     assert "guest_token" not in body
@@ -52,7 +49,6 @@ def test_guest_usage_uses_cookie(
 
     assert usage_response.status_code == 200
     assert usage_response.json()["questions_remaining"] == 3
-    assert usage_response.json()["documents_remaining"] == 1
 
 
 def test_guest_usage_requires_cookie(
@@ -103,7 +99,6 @@ def test_deleted_cookie_receives_rotated_token(
     assert restored_token
     assert restored_token != first_token
     assert restored_response.json()["questions_remaining"] == 3
-    assert restored_response.json()["documents_remaining"] == 1
 
 
 def test_invalid_guest_cookie_is_rejected(
