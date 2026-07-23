@@ -1,10 +1,15 @@
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 
 import {
+  ApiError,
   clearAccessToken,
+  createGuestSession,
   getCurrentUser,
+  listDocuments,
   logout as logoutSession,
+  uploadDocument,
+  type Document,
   type User,
 } from "../services/api-client";
 
@@ -43,6 +48,37 @@ const suggestions = [
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900";
 
+const MAX_DOCUMENT_SIZE_BYTES = 25 * 1024 * 1024;
+const GUEST_DOCUMENT_LIMIT = 3;
+const USER_DOCUMENT_LIMIT = 10;
+
+function formatFileSize(sizeBytes: number): string {
+  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function getUploadErrorMessage(error: unknown): string {
+  if (!(error instanceof ApiError)) {
+    return "Không thể tải tài liệu lên. Vui lòng thử lại.";
+  }
+
+  if (error.code === "DOCUMENT_TOO_LARGE") {
+    return "Tài liệu PDF không được lớn hơn 25 MB.";
+  }
+
+  if (error.code === "DOCUMENT_LIMIT_REACHED") {
+    return "Bạn đã đạt giới hạn số tài liệu được phép tải lên.";
+  }
+
+  if (
+    error.code === "INVALID_PDF" ||
+    error.code === "UNSUPPORTED_DOCUMENT_TYPE"
+  ) {
+    return "Vui lòng chọn một file PDF hợp lệ.";
+  }
+
+  return error.message;
+}
+
 function getInitialTheme(): boolean {
   const savedTheme = localStorage.getItem("docalley-theme");
   if (savedTheme) return savedTheme === "dark";
@@ -56,7 +92,13 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [documents, setDocuments] = useState<Document[]>([]);
+  const [documentsLoading, setDocumentsLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const documentLimit = user ? USER_DOCUMENT_LIMIT : GUEST_DOCUMENT_LIMIT;
+  const documentLimitReached = documents.length >= documentLimit;
 
   useEffect(() => {
     document.documentElement.dataset.theme = darkMode ? "dark" : "light";
@@ -64,16 +106,66 @@ export default function ChatPage() {
   }, [darkMode]);
 
   useEffect(() => {
-    getCurrentUser()
-      .then(setUser)
-      .catch(() => {
+    let active = true;
+
+    async function initializeSession() {
+      try {
+        const currentUser = await getCurrentUser();
+
+        if (active) {
+          setUser(currentUser);
+        }
+      } catch {
         clearAccessToken();
-        setUser(null);
-      })
-      .finally(() => {
-        setAuthLoading(false);
-      });
+
+        try {
+          await createGuestSession();
+        } catch (error) {
+          if (active) {
+            setUploadError(getUploadErrorMessage(error));
+          }
+        }
+
+        if (active) {
+          setUser(null);
+        }
+      } finally {
+        if (active) {
+          setAuthLoading(false);
+        }
+      }
+
+      try {
+        const currentDocuments = await listDocuments();
+
+        if (active) {
+          setDocuments(currentDocuments);
+        }
+      } catch {
+        // Chưa có owner hợp lệ thì danh sách giữ rỗng.
+      } finally {
+        if (active) {
+          setDocumentsLoading(false);
+        }
+      }
+    }
+
+    void initializeSession();
+
+    return () => {
+      active = false;
+    };
   }, []);
+
+  async function switchToGuestDocuments() {
+    try {
+      await createGuestSession();
+      const guestDocuments = await listDocuments();
+      setDocuments(guestDocuments);
+    } catch (error) {
+      setUploadError(getUploadErrorMessage(error));
+    }
+  }
 
   async function logout() {
     try {
@@ -82,6 +174,64 @@ export default function ChatPage() {
       // Access token vẫn được xóa trong api-client.
     } finally {
       setUser(null);
+      setUploadError("");
+      await switchToGuestDocuments();
+    }
+  }
+
+  async function selectDocument(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) return;
+
+    setUploadError("");
+
+    if (documentLimitReached) {
+      setUploadError(
+        `Bạn đã sử dụng đủ ${documentLimit} tài liệu được phép.`,
+      );
+      return;
+    }
+
+    if (file.size > MAX_DOCUMENT_SIZE_BYTES) {
+      setUploadError("Tài liệu PDF không được lớn hơn 25 MB.");
+      return;
+    }
+
+    setUploading(true);
+
+    try {
+      let uploadedDocument: Document;
+
+      try {
+        uploadedDocument = await uploadDocument(file);
+      } catch (error) {
+        const needsGuestSession =
+          error instanceof ApiError &&
+          (error.code === "DOCUMENT_OWNER_REQUIRED" ||
+            error.code === "INVALID_GUEST_SESSION" ||
+            error.code === "INVALID_REFRESH_TOKEN" ||
+            error.code === "UNAUTHORIZED");
+
+        if (!needsGuestSession) {
+          throw error;
+        }
+
+        await createGuestSession();
+        uploadedDocument = await uploadDocument(file);
+      }
+
+      setDocuments((current) => [
+        uploadedDocument,
+        ...current.filter(
+          (document) => document.id !== uploadedDocument.id,
+        ),
+      ]);
+    } catch (error) {
+      setUploadError(getUploadErrorMessage(error));
+    } finally {
+      setUploading(false);
     }
   }
 
@@ -214,11 +364,8 @@ export default function ChatPage() {
             </span>
             <span className="flex min-w-0 flex-1 flex-col text-left">
               <strong className="text-[0.81rem] font-semibold">
-                Giao diện tối
+                Dark Mode
               </strong>
-              <small className="mt-0.5 truncate text-[0.68rem] text-neutral-500 dark:text-neutral-400">
-                Dễ nhìn hơn vào ban đêm
-              </small>
             </span>
             <button
               className={`relative h-[21px] w-9 shrink-0 rounded-full transition-colors ${
@@ -417,6 +564,59 @@ export default function ChatPage() {
         </section>
 
         <div className="mx-auto w-[calc(100%-20px)] bg-white pt-2.5 pb-2.5 md:w-[min(800px,calc(100%-36px))] dark:bg-[#212121]">
+          {(!authLoading || documentsLoading || uploading) && (
+            <div className="mb-2 flex min-h-9 items-center gap-2 overflow-x-auto px-1 text-xs [scrollbar-width:thin]">
+              {documentsLoading && (
+                <span className="text-neutral-500 dark:text-neutral-400">
+                  Đang tải danh sách tài liệu...
+                </span>
+              )}
+              {uploading && (
+                <span className="shrink-0 rounded-full bg-emerald-50 px-3 py-1.5 font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+                  Đang tải PDF lên...
+                </span>
+              )}
+              {!documentsLoading && (
+                <span
+                  className={`shrink-0 rounded-full px-3 py-1.5 font-medium ${
+                    documentLimitReached
+                      ? "bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-300"
+                      : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
+                  }`}
+                >
+                  {documents.length}/{documentLimit} tài liệu
+                </span>
+              )}
+              {documents.slice(0, 4).map((document) => (
+                <span
+                  className="flex max-w-56 shrink-0 items-center gap-2 rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1.5 dark:border-neutral-700 dark:bg-neutral-800"
+                  key={document.id}
+                  title={document.original_filename}
+                >
+                  <span aria-hidden="true">PDF</span>
+                  <span className="truncate font-medium">
+                    {document.original_filename}
+                  </span>
+                  <span className="text-neutral-400">
+                    {formatFileSize(document.size_bytes)}
+                  </span>
+                </span>
+              ))}
+              {documents.length > 4 && (
+                <span className="shrink-0 text-neutral-500 dark:text-neutral-400">
+                  +{documents.length - 4} tài liệu
+                </span>
+              )}
+            </div>
+          )}
+          {uploadError && (
+            <p
+              className="mb-2 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300"
+              role="alert"
+            >
+              {uploadError}
+            </p>
+          )}
           <form
             className="flex items-end gap-2 rounded-[25px] border border-neutral-300 bg-white px-2.5 py-2 shadow-[0_8px_30px_rgb(0_0_0_/_8%)] dark:border-neutral-600 dark:bg-neutral-800 dark:shadow-[0_8px_30px_rgb(0_0_0_/_30%)]"
             onSubmit={submitMessage}
@@ -425,14 +625,20 @@ export default function ChatPage() {
               ref={fileInputRef}
               className="sr-only"
               type="file"
-              accept="application/pdf"
+              accept=".pdf,application/pdf"
               aria-label="Chọn tài liệu PDF"
+              onChange={selectDocument}
             />
             <button
-              className={`grid size-[34px] shrink-0 place-items-center rounded-full bg-transparent text-xl font-light text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-700 ${focusRing}`}
+              className={`grid size-[34px] shrink-0 place-items-center rounded-full bg-transparent text-xl font-light text-neutral-500 hover:bg-neutral-100 disabled:cursor-wait disabled:opacity-40 dark:hover:bg-neutral-700 ${focusRing}`}
               type="button"
               aria-label="Đính kèm tài liệu PDF"
-              title="Đính kèm PDF"
+              title={
+                documentLimitReached
+                  ? `Đã đạt giới hạn ${documentLimit} tài liệu`
+                  : "Đính kèm PDF tối đa 25 MB"
+              }
+              disabled={authLoading || uploading || documentLimitReached}
               onClick={() => fileInputRef.current?.click()}
             >
               ＋

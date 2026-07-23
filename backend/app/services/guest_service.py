@@ -117,33 +117,6 @@ class GuestService:
         )
         return self._build_usage(guest_session)
 
-    def consume_document(
-        self,
-        guest_token: str,
-    ) -> GuestUsageResponse:
-        guest_session = self._get_guest_session(
-            guest_token,
-            for_update=True,
-        )
-
-        if (
-            guest_session.document_count
-            >= self.settings.guest_max_documents
-        ):
-            self.db.rollback()
-            raise ApplicationError(
-                "GUEST_DOCUMENT_LIMIT_REACHED",
-                "Guest document limit has been reached.",
-                status_code=403,
-            )
-
-        guest_session.document_count += 1
-
-        self.db.commit()
-        self.db.refresh(guest_session)
-
-        return self._build_usage(guest_session)
-
     def consume_question(
         self,
         guest_token: str,
@@ -211,13 +184,6 @@ class GuestService:
             questions_remaining=max(
                 self.settings.guest_max_questions
                 - guest_session.question_count,
-                0,
-            ),
-            document_count=guest_session.document_count,
-            document_limit=self.settings.guest_max_documents,
-            documents_remaining=max(
-                self.settings.guest_max_documents
-                - guest_session.document_count,
                 0,
             ),
         )
