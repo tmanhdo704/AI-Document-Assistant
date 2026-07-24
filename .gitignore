@@ -36,6 +36,9 @@ storage/*
 !storage/.gitkeep
 tmp/
 
+# Local PDF files used for testing
+/docs/data/
+
 # Editors and operating systems
 .idea/
 .vscode/
