@@ -31,15 +31,18 @@ class Settings(BaseSettings):
     )
     gemini_model: str = "gemini-2.5-pro"
     llm_timeout_seconds: float = 45.0
-    llm_max_output_tokens: int = 800
-    
+    llm_max_output_tokens: int = 1200
+
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: str = ""
-    qdrant_collection_name: str = "document_chunks"
+    
+    qdrant_collection_name: str = "document_chunks_e5_small_v1"
 
-    embedding_model: str = "gemini-embedding-2"
-    embedding_dimension: int = 768
-    embedding_batch_size: int = 32
+    embedding_provider: str = "fastembed"
+    embedding_model: str = "intfloat/multilingual-e5-small"
+    embedding_dimension: int = 384
+    embedding_batch_size: int = 16
+    embedding_cache_directory: str = "storage/models"
     retrieval_top_k: int = 8
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

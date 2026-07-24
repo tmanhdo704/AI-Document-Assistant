@@ -26,6 +26,82 @@ def test_chunking_preserves_page_number_and_size() -> None:
     assert all(len(chunk.text) <= 30 for chunk in chunks)
 
 
+def test_chunking_overlap_starts_with_complete_words() -> None:
+    text = "alpha bravo charlie delta echo foxtrot golf hotel"
+
+    chunks = ChunkingService(
+        chunk_size=20,
+        overlap=5,
+    ).chunk_pages(
+        (
+            ExtractedPage(
+                page_number=1,
+                text=text,
+            ),
+        ),
+    )
+
+    source_words = set(text.split())
+    chunk_first_words = {
+        chunk.text.split(maxsplit=1)[0]
+        for chunk in chunks
+    }
+
+    assert len(chunks) > 1
+    assert chunk_first_words <= source_words
+    assert all(len(chunk.text) <= 20 for chunk in chunks)
+
+
+def test_chunking_overlap_keeps_all_source_words() -> None:
+    text = "alpha bravo charlie delta echo foxtrot golf hotel"
+
+    chunks = ChunkingService(
+        chunk_size=20,
+        overlap=5,
+    ).chunk_pages(
+        (
+            ExtractedPage(
+                page_number=1,
+                text=text,
+            ),
+        ),
+    )
+
+    chunk_words = {
+        word
+        for chunk in chunks
+        for word in chunk.text.split()
+    }
+
+    assert set(text.split()) <= chunk_words
+
+
+def test_chunking_overlap_prefers_sentence_boundaries() -> None:
+    text = (
+        "First sentence contains alpha details. "
+        "Second sentence contains beta details. "
+        "Third sentence contains gamma details."
+    )
+
+    chunks = ChunkingService(
+        chunk_size=70,
+        overlap=20,
+    ).chunk_pages(
+        (
+            ExtractedPage(
+                page_number=1,
+                text=text,
+            ),
+        ),
+    )
+
+    assert [chunk.text for chunk in chunks] == [
+        "First sentence contains alpha details.",
+        "Second sentence contains beta details.",
+        "Third sentence contains gamma details.",
+    ]
+
+
 def test_retrieval_ranks_matching_chunk_first() -> None:
     page_chunks = ChunkingService().chunk_pages(
         (

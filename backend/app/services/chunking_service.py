@@ -63,7 +63,13 @@ class ChunkingService:
                 break
 
             next_start = max(end - self.overlap, start + 1)
-            start = self._skip_whitespace(text, next_start)
+            start = self._align_start_boundary(
+                text,
+                next_start,
+                minimum_start=start + 1,
+                maximum_start=end,
+                search_window=self.overlap,
+            )
 
         return result
 
@@ -84,6 +90,77 @@ class ChunkingService:
                 return boundary + len(separator)
 
         return desired_end
+
+    @staticmethod
+    def _align_start_boundary(
+        text: str,
+        start: int,
+        *,
+        minimum_start: int,
+        maximum_start: int,
+        search_window: int,
+    ) -> int:
+        """Move an overlapping chunk start to a natural text boundary."""
+        boundary_start = max(
+            minimum_start,
+            start - search_window,
+        )
+        boundary_end = min(
+            len(text),
+            maximum_start,
+            start + search_window,
+        )
+
+        sentence_starts: list[int] = []
+
+        for separator in (
+            ".\n",
+            "?\n",
+            "!\n",
+            ". ",
+            "? ",
+            "! ",
+        ):
+            boundaries = (
+                text.rfind(
+                    separator,
+                    boundary_start,
+                    start,
+                ),
+                text.find(
+                    separator,
+                    start,
+                    boundary_end,
+                ),
+            )
+            sentence_starts.extend(
+                boundary + len(separator)
+                for boundary in boundaries
+                if boundary != -1
+            )
+
+        if sentence_starts:
+            closest_start = min(
+                sentence_starts,
+                key=lambda candidate: abs(candidate - start),
+            )
+            return ChunkingService._skip_whitespace(
+                text,
+                closest_start,
+            )
+
+        aligned_start = start
+
+        while (
+            aligned_start > minimum_start
+            and not text[aligned_start - 1].isspace()
+        ):
+            aligned_start -= 1
+
+        return ChunkingService._skip_whitespace(
+            text,
+            aligned_start,
+        )
 
     @staticmethod
     def _skip_whitespace(text: str, start: int) -> int:

@@ -11,4 +11,4 @@ PyJWT>=2.10,<3.0
 google-auth[requests]>=2.37,<3.0
 pypdf>=6.14,<7.0
 httpx>=0.27,<1.0
-qdrant-client>=1.15,<2.0
+qdrant-client[fastembed]>=1.15,<2.0

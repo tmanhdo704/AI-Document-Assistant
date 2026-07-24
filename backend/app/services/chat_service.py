@@ -4,8 +4,10 @@ import re
 
 from sqlalchemy.orm import Session
 
-from app.clients.llm_client import LLMClient
-from app.core.config import get_settings
+from app.clients.llm_client import (
+    NO_ANSWER_TEXT,
+    LLMClient,
+)
 from app.core.exceptions import ApplicationError
 from app.models.document import Document
 from app.repositories.document_repository import DocumentRepository
@@ -13,17 +15,18 @@ from app.schemas.chat import (
     AnswerResponse,
     CitationResponse,
 )
-from app.services.chunking_service import ChunkingService
 from app.services.document_service import DocumentOwner
-from app.services.extraction_service import ExtractionService
 from app.services.guest_service import GuestService
-from app.services.retrieval_service import RetrievalService, SourceChunk
-from app.utils.file import read_document_file
-
-NO_ANSWER_TEXT = (
-    "Tôi không tìm thấy đủ thông tin trong tài liệu để trả lời câu hỏi này."
+from app.services.retrieval_service import (
+    RetrievedChunk,
+    VectorRetrievalService,
 )
+
 CITATION_PATTERN = re.compile(r"\[(\d+)]")
+DOCUMENT_CLARIFICATION_TEXT = (
+    "Bạn đã tải lên nhiều tài liệu. Vui lòng nêu tên tài liệu cần hỏi "
+    "hoặc hỏi về tất cả tài liệu."
+)
 
 
 class ChatService:
@@ -31,11 +34,12 @@ class ChatService:
         self,
         db: Session,
         llm_client: LLMClient,
+        retrieval_service: VectorRetrievalService | None = None,
     ) -> None:
         self.db = db
         self.llm_client = llm_client
+        self.retrieval_service = retrieval_service
         self.documents = DocumentRepository(db)
-        self.settings = get_settings()
 
     def ask(
         self,
@@ -60,6 +64,7 @@ class ChatService:
             )
 
         guest_service: GuestService | None = None
+        questions_remaining: int | None = None
 
         if owner.guest_session_id is not None:
             if guest_token is None:
@@ -71,6 +76,8 @@ class ChatService:
 
             guest_service = GuestService(self.db)
             usage = guest_service.get_usage(guest_token)
+            questions_remaining = usage.questions_remaining
+
             if usage.questions_remaining == 0:
                 raise ApplicationError(
                     "GUEST_QUESTION_LIMIT_REACHED",
@@ -78,35 +85,59 @@ class ChatService:
                     status_code=403,
                 )
 
-        chunks = self._load_source_chunks(ready_documents)
-        sources = RetrievalService().retrieve(
-            normalized_question,
-            chunks,
+        retrieval_service = (
+            self.retrieval_service
+            or VectorRetrievalService()
         )
+
+        if retrieval_service.requires_document_clarification(
+            normalized_question,
+            document_count=len(ready_documents),
+        ):
+            return AnswerResponse(
+                answer=DOCUMENT_CLARIFICATION_TEXT,
+                citations=[],
+                questions_remaining=questions_remaining,
+            )
+
+        sources = retrieval_service.retrieve(
+            normalized_question,
+            user_id=owner.user_id,
+            guest_session_id=owner.guest_session_id,
+        )
+
         llm_answer = self.llm_client.answer(
             question=normalized_question,
             sources=sources,
         )
 
-        questions_remaining: int | None = None
         if guest_service is not None and guest_token is not None:
             usage = guest_service.consume_question(guest_token)
             questions_remaining = usage.questions_remaining
 
-        cited_indexes = self._cited_indexes(llm_answer.text, len(sources))
-        citations = [
-            CitationResponse(
-                index=index,
-                document_id=sources[index - 1].document_id,
-                filename=sources[index - 1].filename,
-                page_number=sources[index - 1].page_number,
-                excerpt=self._excerpt(sources[index - 1].text),
+        if not llm_answer.answerable:
+            answer_text = NO_ANSWER_TEXT
+            citations: list[CitationResponse] = []
+        else:
+            cited_indexes = (
+                list(llm_answer.cited_indexes)
+                if llm_answer.cited_indexes
+                else self._cited_indexes(
+                    llm_answer.text,
+                    len(sources),
+                )
             )
-            for index in cited_indexes
-        ]
+            answer_text, citations = self._normalize_citations(
+                llm_answer.text,
+                sources=sources,
+                cited_indexes=cited_indexes,
+            )
+
+            if not citations:
+                answer_text = NO_ANSWER_TEXT
 
         return AnswerResponse(
-            answer=llm_answer.text,
+            answer=answer_text,
             citations=citations,
             questions_remaining=questions_remaining,
         )
@@ -125,48 +156,77 @@ class ChatService:
 
         return self.documents.list_for_guest(owner.guest_session_id)
 
-    def _load_source_chunks(
-        self,
-        documents: list[Document],
-    ) -> tuple[SourceChunk, ...]:
-        source_chunks: list[SourceChunk] = []
-
-        for document in documents:
-            content = read_document_file(
-                upload_directory=self.settings.document_upload_directory,
-                storage_key=document.storage_key,
-            )
-            extracted = ExtractionService().extract_pdf(content)
-            document_chunks = ChunkingService().chunk_pages(
-                extracted.pages,
-            )
-            source_chunks.extend(
-                SourceChunk(
-                    document_id=document.id,
-                    filename=document.original_filename,
-                    page_number=chunk.page_number,
-                    text=chunk.text,
-                )
-                for chunk in document_chunks
-            )
-
-        return tuple(source_chunks)
-
     @staticmethod
     def _cited_indexes(answer: str, source_count: int) -> list[int]:
         if answer.strip() == NO_ANSWER_TEXT:
             return []
 
-        indexes = {
-            int(match)
-            for match in CITATION_PATTERN.findall(answer)
-            if 1 <= int(match) <= source_count
-        }
+        indexes: list[int] = []
 
-        if not indexes:
-            indexes = set(range(1, source_count + 1))
+        for match in CITATION_PATTERN.findall(answer):
+            index = int(match)
 
-        return sorted(indexes)
+            if (
+                1 <= index <= source_count
+                and index not in indexes
+            ):
+                indexes.append(index)
+
+        return indexes
+
+    @classmethod
+    def _normalize_citations(
+        cls,
+        answer: str,
+        *,
+        sources: tuple[RetrievedChunk, ...],
+        cited_indexes: list[int],
+    ) -> tuple[str, list[CitationResponse]]:
+        source_to_display: dict[int, int] = {}
+        page_to_display: dict[tuple[object, int], int] = {}
+        citations: list[CitationResponse] = []
+
+        for source_index in cited_indexes:
+            if not 1 <= source_index <= len(sources):
+                continue
+
+            source = sources[source_index - 1]
+            page_key = (
+                source.document_id,
+                source.page_number,
+            )
+            display_index = page_to_display.get(page_key)
+
+            if display_index is None:
+                display_index = len(citations) + 1
+                page_to_display[page_key] = display_index
+                citations.append(
+                    CitationResponse(
+                        index=display_index,
+                        document_id=source.document_id,
+                        filename=source.filename,
+                        page_number=source.page_number,
+                        excerpt=cls._excerpt(source.text),
+                    ),
+                )
+
+            source_to_display[source_index] = display_index
+
+        def replace_citation(match: re.Match[str]) -> str:
+            source_index = int(match.group(1))
+            display_index = source_to_display.get(source_index)
+            return (
+                f"[{display_index}]"
+                if display_index is not None
+                else ""
+            )
+
+        normalized_answer = CITATION_PATTERN.sub(
+            replace_citation,
+            answer,
+        ).strip()
+
+        return normalized_answer, citations
 
     @staticmethod
     def _excerpt(text: str, limit: int = 280) -> str:
