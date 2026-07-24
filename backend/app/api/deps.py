@@ -8,6 +8,7 @@ from fastapi.security import (
 )
 from sqlalchemy.orm import Session
 
+from app.clients.llm_client import LLMClient
 from app.core.exceptions import ApplicationError
 from app.core.security import decode_access_token, hash_guest_token
 from app.db.session import SessionLocal
@@ -18,6 +19,10 @@ from app.services.document_service import DocumentOwner
 
 bearer_scheme = HTTPBearer(auto_error=False)
 GUEST_COOKIE_NAME = "docally_guest_token"
+
+
+def get_llm_client() -> LLMClient:
+    return LLMClient()
 
 
 def get_db() -> Generator[Session, None, None]:

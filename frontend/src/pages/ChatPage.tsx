@@ -3,12 +3,14 @@ import { Link } from "react-router";
 
 import {
   ApiError,
+  askDocuments,
   clearAccessToken,
   createGuestSession,
   getCurrentUser,
   listDocuments,
   logout as logoutSession,
   uploadDocument,
+  type Citation,
   type Document,
   type User,
 } from "../services/api-client";
@@ -17,6 +19,7 @@ type Message = {
   id: number;
   role: "user" | "assistant";
   content: string;
+  citations?: Citation[];
 };
 
 const sampleChats = [
@@ -94,6 +97,30 @@ function getUploadErrorMessage(error: unknown): string {
   return error.message;
 }
 
+function getChatErrorMessage(error: unknown): string {
+  if (!(error instanceof ApiError)) {
+    return "Không thể nhận câu trả lời. Vui lòng thử lại.";
+  }
+
+  if (error.code === "GUEST_QUESTION_LIMIT_REACHED") {
+    return "Bạn đã dùng hết 3 câu hỏi miễn phí. Hãy đăng nhập để tiếp tục.";
+  }
+
+  if (error.code === "LLM_NOT_CONFIGURED") {
+    return "Model trả lời chưa được cấu hình trên máy chủ.";
+  }
+
+  if (
+    error.code === "LLM_TIMEOUT" ||
+    error.code === "LLM_UNAVAILABLE" ||
+    error.code === "LLM_INVALID_RESPONSE"
+  ) {
+    return "Model đang tạm thời không phản hồi. Vui lòng thử lại.";
+  }
+
+  return error.message;
+}
+
 function getInitialTheme(): boolean {
   const savedTheme = localStorage.getItem("docalley-theme");
   if (savedTheme) return savedTheme === "dark";
@@ -111,6 +138,8 @@ export default function ChatPage() {
   const [documentsLoading, setDocumentsLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
+  const [chatError, setChatError] = useState("");
+  const [answering, setAnswering] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const documentLimit = user ? USER_DOCUMENT_LIMIT : GUEST_DOCUMENT_LIMIT;
   const documentLimitReached = documents.length >= documentLimit;
@@ -253,25 +282,45 @@ export default function ChatPage() {
   function startNewChat() {
     setMessages([]);
     setInput("");
+    setChatError("");
     setSidebarOpen(false);
   }
 
-  function submitMessage(event: FormEvent<HTMLFormElement>) {
+  async function submitMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const content = input.trim();
-    if (!content) return;
+    if (!content || answering) return;
 
+    if (documents.length === 0) {
+      setChatError("Hãy tải lên ít nhất một tài liệu PDF trước khi đặt câu hỏi.");
+      return;
+    }
+
+    const messageId = Date.now();
     setMessages((current) => [
       ...current,
-      { id: Date.now(), role: "user", content },
-      {
-        id: Date.now() + 1,
-        role: "assistant",
-        content:
-          "Đây là bản xem trước giao diện. Câu hỏi sẽ được trả lời khi chúng ta kết nối backend và hệ thống RAG.",
-      },
+      { id: messageId, role: "user", content },
     ]);
     setInput("");
+    setChatError("");
+    setAnswering(true);
+
+    try {
+      const response = await askDocuments(content);
+      setMessages((current) => [
+        ...current,
+        {
+          id: messageId + 1,
+          role: "assistant",
+          content: response.answer,
+          citations: response.citations,
+        },
+      ]);
+    } catch (error) {
+      setChatError(getChatErrorMessage(error));
+    } finally {
+      setAnswering(false);
+    }
   }
 
   return (
@@ -570,10 +619,43 @@ export default function ChatPage() {
                         DocAlly
                       </span>
                     )}
-                    <p className="m-0 text-[0.92rem]">{message.content}</p>
+                    <p className="m-0 whitespace-pre-wrap text-[0.92rem]">
+                      {message.content}
+                    </p>
+                    {message.role === "assistant" &&
+                      message.citations &&
+                      message.citations.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {message.citations.map((citation) => (
+                            <span
+                              className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200"
+                              key={`${message.id}-${citation.index}`}
+                              title={citation.excerpt}
+                            >
+                              [{citation.index}] {citation.filename}, trang{" "}
+                              {citation.page_number}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                   </div>
                 </article>
               ))}
+              {answering && (
+                <article className="mb-[30px] flex gap-3.5 leading-relaxed">
+                  <span className="mt-0.5 grid size-[30px] shrink-0 place-items-center rounded-[9px] bg-emerald-600 text-xs font-extrabold text-white dark:bg-emerald-500">
+                    D
+                  </span>
+                  <div>
+                    <span className="mb-1 block text-[0.79rem] font-bold">
+                      DocAlly
+                    </span>
+                    <p className="m-0 animate-pulse text-[0.92rem] text-neutral-500">
+                      Đang đọc tài liệu và soạn câu trả lời...
+                    </p>
+                  </div>
+                </article>
+              )}
             </div>
           )}
         </section>
@@ -602,7 +684,7 @@ export default function ChatPage() {
                   {documents.length}/{documentLimit} tài liệu
                 </span>
               )}
-              {documents.slice(0, 4).map((document) => (
+              {documents.map((document) => (
                 <span
                   className="flex max-w-56 shrink-0 items-center gap-2 rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1.5 dark:border-neutral-700 dark:bg-neutral-800"
                   key={document.id}
@@ -622,11 +704,6 @@ export default function ChatPage() {
                   )}
                 </span>
               ))}
-              {documents.length > 4 && (
-                <span className="shrink-0 text-neutral-500 dark:text-neutral-400">
-                  +{documents.length - 4} tài liệu
-                </span>
-              )}
             </div>
           )}
           {uploadError && (
@@ -635,6 +712,14 @@ export default function ChatPage() {
               role="alert"
             >
               {uploadError}
+            </p>
+          )}
+          {chatError && (
+            <p
+              className="mb-2 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300"
+              role="alert"
+            >
+              {chatError}
             </p>
           )}
           <form
@@ -681,7 +766,7 @@ export default function ChatPage() {
               className={`grid size-[34px] shrink-0 place-items-center rounded-full bg-neutral-900 text-lg font-bold text-white transition disabled:cursor-default disabled:opacity-20 dark:bg-white dark:text-neutral-900 ${focusRing}`}
               type="submit"
               aria-label="Gửi câu hỏi"
-              disabled={!input.trim()}
+              disabled={!input.trim() || answering || documents.length === 0}
             >
               ↑
             </button>

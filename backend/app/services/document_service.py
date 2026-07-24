@@ -1,5 +1,3 @@
-"""Document upload and listing use cases."""
-
 import uuid
 from dataclasses import dataclass
 
@@ -12,6 +10,8 @@ from app.repositories.document_repository import DocumentRepository
 from app.repositories.guest_repository import GuestRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.document import DocumentResponse
+from app.services.chunking_service import ChunkingService
+from app.services.embedding_service import EmbeddingService
 from app.services.extraction_service import ExtractionService
 from app.utils.file import (
     delete_document_file,
@@ -35,10 +35,15 @@ class DocumentOwner:
 
 
 class DocumentService:
-    def __init__(self, db: Session) -> None:
+    def __init__(
+        self,
+        db: Session,
+        embedding_service: EmbeddingService | None = None,
+    ) -> None:
         self.db = db
         self.repository = DocumentRepository(db)
         self.settings = get_settings()
+        self.embedding_service = embedding_service
 
     async def upload(
         self,
@@ -52,6 +57,11 @@ class DocumentService:
         extracted_document = ExtractionService().extract_pdf(
             validated_pdf.content,
         )
+
+        chunks = ChunkingService().chunk_pages(
+            extracted_document.pages,
+        )
+
         document_count, document_limit = self._lock_owner_and_count_documents(
             owner,
         )
@@ -86,6 +96,20 @@ class DocumentService:
                 size_bytes=validated_pdf.size_bytes,
                 file_hash=validated_pdf.file_hash,
             )
+
+            embedding_service = (
+                self.embedding_service
+                or EmbeddingService()
+            )
+
+            embedding_service.index_document(
+                document_id=document.id,
+                filename=document.original_filename,
+                chunks=chunks,
+                user_id=document.user_id,
+                guest_session_id=document.guest_session_id,
+            )
+
             self.repository.update_status(
                 document,
                 status="EXTRACTED",

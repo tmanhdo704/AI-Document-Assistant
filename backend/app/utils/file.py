@@ -129,6 +129,29 @@ def delete_document_file(
     target_path.unlink(missing_ok=True)
 
 
+def read_document_file(
+    *,
+    upload_directory: str,
+    storage_key: str,
+) -> bytes:
+    target_path = _resolve_storage_path(upload_directory, storage_key)
+
+    try:
+        return target_path.read_bytes()
+    except FileNotFoundError as exc:
+        raise ApplicationError(
+            "DOCUMENT_FILE_NOT_FOUND",
+            "The stored document file could not be found.",
+            status_code=404,
+        ) from exc
+    except OSError as exc:
+        raise ApplicationError(
+            "DOCUMENT_FILE_UNAVAILABLE",
+            "The stored document file could not be read.",
+            status_code=503,
+        ) from exc
+
+
 def _normalize_filename(filename: str | None) -> str:
     if filename is None:
         return ""

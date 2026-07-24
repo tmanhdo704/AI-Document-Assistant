@@ -164,6 +164,20 @@ export type Document = {
   updated_at: string;
 };
 
+export type Citation = {
+  index: number;
+  document_id: string;
+  filename: string;
+  page_number: number;
+  excerpt: string;
+};
+
+export type AnswerResponse = {
+  answer: string;
+  citations: Citation[];
+  questions_remaining: number | null;
+};
+
 export async function getHealth(): Promise<HealthResponse> {
   return request<HealthResponse>("/health");
 }
@@ -186,6 +200,15 @@ export async function uploadDocument(file: File): Promise<Document> {
 
 export async function listDocuments(): Promise<Document[]> {
   return request<Document[]>("/documents");
+}
+
+export async function askDocuments(
+  question: string,
+): Promise<AnswerResponse> {
+  return request<AnswerResponse>("/ask", {
+    method: "POST",
+    body: JSON.stringify({ question }),
+  });
 }
 
 export async function login(

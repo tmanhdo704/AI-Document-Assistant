@@ -1,8 +1,8 @@
 # DocAlly
 
 Ứng dụng hỏi đáp tài liệu PDF sử dụng FastAPI, React, PostgreSQL và kiến trúc
-Modular Monolith. Đây là bộ khung ban đầu; các nghiệp vụ authentication, guest,
-document processing và RAG sẽ được bổ sung theo kế hoạch 4 tuần.
+Modular Monolith. Luồng MVP hiện hỗ trợ authentication, guest session, upload
+và trích xuất PDF, truy xuất đoạn liên quan, gọi LLM và citation theo trang.
 
 ## Cấu trúc chính
 
@@ -24,6 +24,14 @@ API -> Service -> Repository -> PostgreSQL
 ## Khởi động bằng Docker
 
 1. Sao chép `.env.example` thành `.env` và thay các giá trị mẫu khi cần.
+   Để bật chức năng trả lời, tạo API key trong Google AI Studio và cấu hình:
+
+   ```env
+   GEMINI_API_KEY=<api-key-tu-google-ai-studio>
+   GEMINI_MODEL=gemini-2.5-pro
+   ```
+
+   Không đưa `GEMINI_API_KEY` vào frontend hoặc commit file `.env`.
 2. Chạy:
 
    ```bash
@@ -53,9 +61,12 @@ npm install
 npm run dev
 ```
 
-## Trạng thái scaffold
+## Trạng thái hiện tại
 
-- Health check đã hoạt động.
-- Các router nghiệp vụ mới chỉ là ranh giới module, chưa có logic.
-- PostgreSQL đã được khai báo trong Docker Compose.
-- Qdrant và pipeline RAG sẽ được bổ sung ở tuần 3.
+- Email/password, Google login, JWT và guest session đã hoạt động.
+- PDF được kiểm tra, lưu cục bộ và trích xuất text theo trang.
+- `POST /ask` tìm kiếm trên toàn bộ tài liệu của phiên hiện tại, trả lời dựa
+  trên các đoạn liên quan và kèm citation tên file, số trang.
+- Backend kiểm tra quyền sở hữu tài liệu và giới hạn guest tối đa 3 câu hỏi.
+- Retrieval hiện dùng xếp hạng từ khóa cục bộ; embedding và Qdrant là bước
+  nâng cấp tiếp theo.

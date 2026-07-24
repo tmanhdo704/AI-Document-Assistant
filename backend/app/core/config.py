@@ -25,6 +25,23 @@ class Settings(BaseSettings):
     document_upload_directory: str = "storage/uploads"
     document_max_size_bytes: int = 25 * 1024 * 1024
 
+    gemini_api_key: str = ""
+    gemini_base_url: str = (
+        "https://generativelanguage.googleapis.com/v1beta"
+    )
+    gemini_model: str = "gemini-2.5-pro"
+    llm_timeout_seconds: float = 45.0
+    llm_max_output_tokens: int = 800
+    
+    qdrant_url: str = "http://localhost:6333"
+    qdrant_api_key: str = ""
+    qdrant_collection_name: str = "document_chunks"
+
+    embedding_model: str = "gemini-embedding-2"
+    embedding_dimension: int = 768
+    embedding_batch_size: int = 32
+    retrieval_top_k: int = 8
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property
